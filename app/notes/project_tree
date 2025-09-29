@@ -1,0 +1,20 @@
+pc-attendance-admin/
+ ├── app/
+ │    ├── layout.js           # global layout
+ │    ├── page.js             # dashboard
+ │    ├── logs/
+ │    │    └── page.js        # logs page
+ │    ├── users/
+ │    │    └── page.js        # users page
+ │    ├── payroll/
+ │    │    └── page.js        # payroll page
+ │    └── api/
+ │         └── payroll/
+ │              └── export/route.js # backend payroll calculation + Excel
+ ├── components/
+ │    ├── LogsTable.js
+ │    ├── UserForm.js
+ │    └── PayrollFilters.js
+ ├── lib/
+ │    └── firebase.js
+ └── package.json
