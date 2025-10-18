@@ -165,17 +165,18 @@ export default function LogsPage() {
       {/* Open shifts warning */}
       {filtered.length > 0 && (
         <div className="mt-4">
-          <h2 className="font-semibold">Open Shifts</h2>
+          <h2 className="font-semibold">Open Shifts:</h2>
           {detectOpenShifts().length === 0 ? (
             <p className="text-sm text-green-600">All shifts closed ✅</p>
           ) : (
-            <ul className="list-disc pl-6 text-sm text-red-600">
-              {detectOpenShifts().map((s, i) => (
-                <li key={i}>
-                  {s.empId} on {s.date} ({s.count} punches)
-                </li>
-              ))}
-            </ul>
+             <p className="text-sm text-red-600">{detectOpenShifts().length} shifts not closed</p>
+            // <ul className="list-disc pl-6 text-sm text-red-600">
+            //   {detectOpenShifts().map((s, i) => (
+            //     <li key={i}>
+            //       {s.empId} on {s.date} ({s.count} punches)
+            //     </li>
+            //   ))}
+            // </ul>
           )}
         </div>
       )}
