@@ -496,13 +496,6 @@ export default function ReportsPage() {
     );
   };
 
-  // 🔹 Export CSV
-  //   const exportCSV = () => {
-  //     const csv = Papa.unparse(summary);
-  //     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  //     saveAs(blob, "attendance_summary.csv");
-  //   };
-
   const exportPayrollCSV = () => {
     if (!summary.length) return;
 
