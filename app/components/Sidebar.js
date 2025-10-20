@@ -4,9 +4,10 @@ import { usePathname } from "next/navigation";
 
 const menu = [
   { href: "/", label: "Dashboard" },
-  { href: "/employees", label: "Employees" },
-  { href: "/logs", label: "Logs" },
+  // { href: "/employees", label: "Employees" },
+  // { href: "/logs", label: "Logs" },
   { href: "/reports", label: "Reports" },
+  { href: "/holidays", label: "Holidays" },
   { href: "/settings", label: "Settings" },
 ];
 
