@@ -784,6 +784,149 @@ export default function ReportsPage() {
     );
   };
 
+  // 🔹 Compute Weekly Breakdown per Employee
+  async function computeWeeklyBreakdown() {
+    if (!logs.length) return alert("Please upload a CSV first.");
+
+    console.log("Generating weekly breakdown using", logs.length, "rows...");
+
+    const weeksByEmployee = {};
+    const holidays = (settings?.holidays || []).map((d) => DateTime.fromISO(d));
+
+    logs.forEach((row) => {
+      const empId = row["Employee ID"]?.toString();
+      const name = row["First Name"] || row["Name"] || "";
+      const date = row["Date"];
+      const time = row["Time"];
+      const punch = row["Punch State"];
+      if (!empId || !date || !time || !punch) return;
+
+      const dt = DateTime.fromFormat(`${date} ${time}`, "dd-MM-yyyy HH:mm");
+      const weekNum = dt.weekNumber;
+      const isoDate = dt.toISODate();
+      const dayOfWeek = dt.weekday; // 7 = Sunday
+
+      if (!weeksByEmployee[empId]) {
+        weeksByEmployee[empId] = { empId, name, weeks: {} };
+      }
+      if (!weeksByEmployee[empId].weeks[weekNum]) {
+        weeksByEmployee[empId].weeks[weekNum] = {
+          total: 0,
+          normal: 0,
+          overtime: 0,
+          night: 0,
+          sunday: 0,
+          holiday: 0,
+          days: {},
+        };
+      }
+
+      // store logs by date
+      if (!weeksByEmployee[empId].weeks[weekNum].days[date])
+        weeksByEmployee[empId].weeks[weekNum].days[date] = [];
+      weeksByEmployee[empId].weeks[weekNum].days[date].push({
+        time: dt,
+        state: punch.trim(),
+        isHoliday: holidays.some((h) => h.hasSame(dt, "day")),
+        isSunday: dayOfWeek === 7,
+      });
+    });
+
+    // compute totals
+    for (const emp of Object.values(weeksByEmployee)) {
+      for (const [weekNum, week] of Object.entries(emp.weeks)) {
+        for (const [date, punches] of Object.entries(week.days)) {
+          punches.sort((a, b) => a.time - b.time);
+
+          for (let i = 0; i < punches.length - 1; i++) {
+            const current = punches[i];
+            const next = punches[i + 1];
+            if (current.state === "Check In" && next.state === "Check Out") {
+              let hours = next.time.diff(current.time, "hours").hours;
+              if (hours < 0) continue;
+
+              week.total += hours;
+
+              const nightStart = 22;
+const nightEnd = 6;
+if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
+  week.night += hours;
+}
+              // Night Hours (after 18:00)
+              if (current.time.hour >= 18 || next.time.hour >= 18)
+                week.night += hours;
+              else week.normal += hours;
+
+              if (current.isSunday || next.isSunday) week.sunday += hours;
+              if (current.isHoliday || next.isHoliday) week.holiday += hours;
+            }
+          }
+        }
+
+        // Weekly Overtime (beyond 48 hrs)
+        // if (week.total > 48) {
+        //   // week.overtime = week.total - 48;
+        //   week.normal = week.normal - week.overtime;
+        // }
+        if (week.total > 48) {
+          week.overtime = week.total - 48;
+          week.normal = Math.min(week.normal, 48);
+        }
+      }
+    }
+
+    console.log("✅ Weekly breakdown generated:", weeksByEmployee);
+    setSummary(Object.values(weeksByEmployee)); // reuse summary state for display
+  }
+
+  function exportWeeklyPDF(data) {
+    if (!data.length) return alert("Generate weekly breakdown first.");
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text("Weekly Attendance Breakdown", 14, 20);
+    doc.setFontSize(10);
+    doc.text(
+      `Period: ${dateRange.start || autoRange.start} → ${
+        dateRange.end || autoRange.end
+      }`,
+      14,
+      28
+    );
+
+    let y = 35;
+    data.forEach((emp, idx) => {
+      if (idx > 0) doc.addPage();
+      doc.setFontSize(12);
+      doc.text(`${emp.name} (${emp.empId})`, 14, y);
+      y += 5;
+
+      const tableData = Object.entries(emp.weeks).map(([week, d]) => [
+        week,
+        d.total.toFixed(2),
+        d.normal.toFixed(2),
+        d.overtime.toFixed(2),
+        d.night.toFixed(2),
+        d.sunday.toFixed(2),
+        d.holiday.toFixed(2),
+      ]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Week", "Total", "Normal", "OT", "Night", "Sunday", "Holiday"]],
+        body: tableData,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [52, 152, 219] },
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+      });
+    });
+
+    const rangeLabel = `${dateRange.start || autoRange.start}_to_${
+      dateRange.end || autoRange.end
+    }`;
+    doc.save(`weekly_breakdown_${rangeLabel}.pdf`);
+  }
+
   return (
     <div className="bg-white h-auto text-black p-6 rounded shadow space-y-6">
       <h1 className="text-xl font-bold">Reports</h1>
@@ -838,6 +981,18 @@ export default function ReportsPage() {
         >
           Export Attendance PDF
         </button>
+        <button
+          onClick={computeWeeklyBreakdown}
+          className="px-4 py-2 bg-indigo-600 text-white rounded"
+        >
+          Generate Weekly Breakdown
+        </button>
+        <button
+          onClick={() => exportWeeklyPDF(summary)}
+          className="px-4 py-2 bg-pink-600 text-white rounded"
+        >
+          Export Weekly Breakdown PDF
+        </button>
       </div>
 
       {/* Auto-detected period */}
@@ -877,7 +1032,7 @@ export default function ReportsPage() {
       )}
 
       {/* Summary Table */}
-      {summary.length > 0 && (
+      {summary.length > 0 && summary[0]?.weeks ==null && (
         <>
           <p className="text-sm mt-2">
             Showing report for: <b>{dateRange.start || autoRange.start}</b> →{" "}
@@ -928,6 +1083,61 @@ export default function ReportsPage() {
         </>
       )}
 
+      {/* Weekly Breakdown Section */}
+      {summary.length > 0 && summary[0]?.weeks && (
+        <div className="mt-8">
+          <h2 className="text-lg font-bold mb-4">Weekly Breakdown</h2>
+          {summary.map((emp, i) => (
+            <div
+              key={i}
+              className="mb-8 border rounded-lg shadow-sm p-4 bg-gray-50"
+            >
+              <h3 className="font-semibold text-gray-800 mb-2">
+                {emp.name} ({emp.empId})
+              </h3>
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-blue-100">
+                  <tr>
+                    <th className="border p-2">Week</th>
+                    <th className="border p-2">Total</th>
+                    <th className="border p-2">Normal</th>
+                    <th className="border p-2">Overtime</th>
+                    <th className="border p-2">Night</th>
+                    <th className="border p-2">Sunday</th>
+                    <th className="border p-2">Holiday</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(emp.weeks).map(([weekNum, week]) => (
+                    <tr key={weekNum}>
+                      <td className="border p-2 text-center">{weekNum}</td>
+                      <td className="border p-2 text-center">
+                        {week.total.toFixed(2)}
+                      </td>
+                      <td className="border p-2 text-center">
+                        {week.normal.toFixed(2)}
+                      </td>
+                      <td className="border p-2 text-center">
+                        {week.overtime.toFixed(2)}
+                      </td>
+                      <td className="border p-2 text-center">
+                        {week.night.toFixed(2)}
+                      </td>
+                      <td className="border p-2 text-center">
+                        {week.sunday.toFixed(2)}
+                      </td>
+                      <td className="border p-2 text-center">
+                        {week.holiday.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Drilldown Full-Screen */}
       {selectedEmployee && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
@@ -962,6 +1172,8 @@ export default function ReportsPage() {
                     return (
                       <tr key={i}>
                         <td className="p-2 border">{date}</td>
+                        <td className="p-2 border">{punches.map(p => p.toFormat("HH:mm")).join(", ")}</td>
+
                         {/* <td className="p-2 border">
                           {time}
                         </td> */}
