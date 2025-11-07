@@ -204,7 +204,6 @@ export default function ReportsPage() {
   };
 
   // 🔹 Compute Report
-  // Put this inside ReportsPage (replace previous computeSummary)
   async function computeSummary(
     useOfflineLogs = false,
     offlineHolidays = null,
@@ -290,24 +289,15 @@ export default function ReportsPage() {
         console.warn("⚠️ Invalid date/time:", date, time);
         return;
       }
-      // if (start && end) {
-      //   const t = "00:00";
-      //   const sISO = DateTime.fromISO(start);
-      //   // const sISO = DateTime.fromFormat(`${start} ${t}`, "dd/MM/yyyy HH:mm");
-      //   // const sISO = DateTime.fromFormat(`${end} ${t}`, "dd/MM/yyyy HH:mm");
-      //   const eISO = DateTime.fromISO(end);
-      //   if (ts < sISO || ts > eISO) {
-      //     console.log("⏩ Skipping out-of-range log", empId, date, time);
-      //     return;
-      //   }
-      // }
-
-      // if (start && ts < DateTime.fromISO(start)) return;
-      // if (end && ts > DateTime.fromISO(end)) return;
+    
 
       if (!grouped[empId]) grouped[empId] = { empId, name, days: {} };
       if (!grouped[empId].days[date]) grouped[empId].days[date] = [];
-      grouped[empId].days[date].push({ time: ts, state });
+      // grouped[empId].days[date].push({ time: ts, state });
+      grouped[empId].days[date].push({
+        time: ts.isValid ? ts : DateTime.fromISO(ts),
+        state,
+      });
     });
 
     console.log("Grouped employees:", Object.keys(grouped));
@@ -442,6 +432,10 @@ export default function ReportsPage() {
 
       // Apply adjustmentTotal to normal hours (or you may prefer to add to a separate adjustments field)
       totalNormal += adjustmentTotal;
+      // Compute total hours and attendance days
+const totalHours =
+  totalNormal + totalOT + totalNight + totalHoliday + totalSunday;
+const attendanceDays = Object.keys(emp.days).length;
 
       // Round
       return {
@@ -452,10 +446,9 @@ export default function ReportsPage() {
         holiday: Number(totalHoliday.toFixed(2)),
         sunday: Number(totalSunday.toFixed(2)),
         night: Number(totalNight.toFixed(2)),
-        transport: Number(totalTransport.toFixed(2)),
-        attendance: Number(totalAttendance.toFixed(2)),
+        transport: attendanceDays, //tracking days for transport allowance
+        totalHours: Number(totalHours.toFixed(2)), 
         openShifts,
-        days: emp.days,
       };
     });
 
@@ -467,87 +460,104 @@ export default function ReportsPage() {
     }
   }
 
-  const exportCSV = () => {
-    if (!summary.length) return;
+const exportCSV = () => {
+  if (!summary.length) return;
 
-    const rangeLabel = `${dateRange.start || autoRange.start} → ${
-      dateRange.end || autoRange.end
-    }`;
+  const rangeLabel = `${dateRange.start || autoRange.start} - ${
+    dateRange.end || autoRange.end
+  }`;
 
-    // custom title + subtitle rows
-    const headerRows = [
-      ["Attendance Summary Report"], // Title
-      [`Period: ${rangeLabel}`],
-      [], // spacer row
-    ];
+  const headerRows = [
+    ["Attendance Summary Report"],
+    [`Period: ${rangeLabel}`],
+    [],
+  ];
 
-    // let Papa generate table portion
-    const csvTable = Papa.unparse(summary);
+  const fieldHeaders = [
+    "EMP ID",
+    "Name",
+    "Normal Hours",
+    "Overtime",
+    "Holiday",
+    "Sunday",
+    "Night",
+    "TLAllownace",
+    "Total Hours",
+  ];
 
-    // prepend header rows manually
-    const fullCsv = [...headerRows.map((r) => r.join(",")), csvTable].join(
-      "\n"
-    );
+  const dataRows = summary.map((row) => [
+    row.empId,
+    row.name,
+    row.normal,
+    row.overtime,
+    row.holiday,
+    row.sunday,
+    row.night,
+    row.transport,
+    row.totalHours,
+  ]);
 
-    const blob = new Blob([fullCsv], { type: "text/csv;charset=utf-8" });
-    saveAs(
-      blob,
-      `attendance_summary_${rangeLabel.replace(/ → /g, "_to_")}.csv`
-    );
-  };
+  const csv = Papa.unparse({
+    fields: fieldHeaders,
+    data: dataRows,
+  });
 
-  const exportPayrollCSV = () => {
-    if (!summary.length) return;
+  const fullCsv = [...headerRows.map((r) => r.join(",")), csv].join("\n");
+  const blob = new Blob([fullCsv], { type: "text/csv;charset=utf-8" });
 
-    const rangeLabel = `${dateRange.start || autoRange.start}_to_${
-      dateRange.end || autoRange.end
-    }`;
+  saveAs(blob, `attendance_summary_${rangeLabel.replace(/ → /g, "_to_")}.csv`);
+};
 
-    const headerRows = [
-      ["Payroll Attendance Report"], // Title
-      [
-        `Period: ${dateRange.start || autoRange.start} -> ${
-          dateRange.end || autoRange.end
-        }`,
-      ],
-      [], // empty row
-    ];
 
-    const fieldHeaders = [
-      "EMP ID",
-      "Full Name",
-      "PAY TYPE",
-      "NORMAL",
-      "OVERTIME",
-      "HOLIDAY",
-      "NIGHT",
-      "T/L ALLOW",
-      "ATTEND ALLOW",
-    ];
+const exportPayrollCSV = () => {
+  if (!summary.length) return;
 
-    const dataRows = summary.map((row) => [
-      row.empId,
-      row.name,
-      "Monthly", // adjust if you have actual PAY TYPE
-      row.normal,
-      row.overtime,
-      row.holiday,
-      row.night,
-      row.transport,
-      row.attendance,
-    ]);
+  const rangeLabel = `${dateRange.start || autoRange.start}_to_${
+    dateRange.end || autoRange.end
+  }`;
 
-    const csv = Papa.unparse({
-      fields: fieldHeaders,
-      data: dataRows,
-    });
+  const headerRows = [
+    ["Payroll Attendance Report"],
+    [
+      `Period: ${dateRange.start || autoRange.start} -> ${
+        dateRange.end || autoRange.end
+      }`,
+    ],
+    [],
+  ];
 
-    // prepend title + subtitle
-    const fullCsv = [...headerRows.map((r) => r.join(",")), csv].join("\n");
+  const fieldHeaders = [
+    "EmpNo",
+    "Name",
+    "Normal",
+    "OverTime",
+    "Holiday",
+    "Night",
+    "TLAllowance",
+    // "Total Hours",
+  ];
 
-    const blob = new Blob([fullCsv], { type: "text/csv;charset=utf-8" });
-    saveAs(blob, `payroll_report_${rangeLabel}.csv`);
-  };
+  const dataRows = summary.map((row) => [
+    row.empId || "",
+    row.name || "",
+    row.normal?.toFixed?.(2) ?? "",
+    row.overtime?.toFixed?.(2) ?? "",
+    row.holiday?.toFixed?.(2) ?? "",
+    row.night?.toFixed?.(2) ?? "",
+    row.transport?.toFixed?.(2) ?? "",
+    // row.totalHours?.toFixed?.(2) ?? "",
+    // row.attendanceDays ?? "",
+  ]);
+
+  const csv = Papa.unparse({
+    fields: fieldHeaders,
+    data: dataRows,
+  });
+
+  const fullCsv = [...headerRows.map((r) => r.join(",")), csv].join("\n");
+  const blob = new Blob([fullCsv], { type: "text/csv;charset=utf-8" });
+  saveAs(blob, `payroll_report_${rangeLabel}.csv`);
+};
 
   //   // Export summary as PDF
   const exportPDF = () => {
@@ -576,8 +586,8 @@ export default function ReportsPage() {
       row.sunday,
       row.night,
       row.transport,
-      row.attendance,
-      row.openShifts,
+      // row.attendance,
+      // row.openShifts,
     ]);
 
     // Generate table
@@ -593,8 +603,8 @@ export default function ReportsPage() {
           "Sunday",
           "Night",
           "T/L Allow",
-          "Attend Allow",
-          "Open Shifts",
+          // "Attend Allow",
+          // "Open Shifts",
         ],
       ],
       body: tableData,
@@ -610,83 +620,42 @@ export default function ReportsPage() {
     doc.save(`attendance_report_${rangeLabel}.pdf`);
   };
 
-  // const exportDrilldownPDF = () => {
-  //   if (!selectedEmployee) return;
-
-  //   const doc = new jsPDF();
-
-  //   const title = `Breakdown Report - ${selectedEmployee.name} (${selectedEmployee.empId})`;
-  //   const period = `Period: ${dateRange.start || autoRange.start} -> ${dateRange.end || autoRange.end}`;
-
-  //   // Title
-  //   doc.setFontSize(14);
-  //   doc.text(title, 14, 20);
-  //   doc.setFontSize(11);
-  //   doc.text(period, 14, 28);
-
-  //   // Prepare table data
-  //   const tableData = Object.entries(selectedEmployee.days).map(([date, punches]) => {
-  //     punches.sort((a, b) => a - b);
-  //     let hours = "-";
-  //     let status = "OK";
-  //     if (punches.length % 2 !== 0) {
-  //       status = "Open Shift";
-  //     } else {
-  //       hours = punches[punches.length - 1]
-  //         .diff(punches[0], "hours")
-  //         .hours.toFixed(2);
-  //     }
-  //     return [
-  //       date,
-  //       punches.map((p) => p.toFormat("HH:mm")).join(", "),
-  //       hours,
-  //       status,
-  //     ];
-  //   });
-
-  //   // Table
-  //   autoTable(doc, {
-  //     startY: 35,
-  //     head: [["Date", "Punches", "Hours", "Status"]],
-  //     body: tableData,
-  //   });
-
-  //   // Save
-  //   doc.save(`breakdown_${selectedEmployee.empId}.pdf`);
-  // };
-
   const exportDrilldownPDF = () => {
-    if (!selectedEmployee) return;
+    if (!summary.length) return alert("Generate the report first!");
 
-    const doc = new jsPDF();
-
-    const title = `Breakdown Report - ${selectedEmployee.name} (${selectedEmployee.empId})`;
-    const period = `Period: ${dateRange.start || autoRange.start} -> ${
+    const doc = new jsPDF("p", "mm", "a4");
+    const title = "Attendance Breakdown Report (All Employees)";
+    const period = `Period: ${dateRange.start || autoRange.start} → ${
       dateRange.end || autoRange.end
     }`;
 
-    // Title
     doc.setFontSize(14);
-    doc.text(title, 14, 20);
-    doc.setFontSize(11);
-    doc.text(period, 14, 28);
+    doc.text(title, 14, 15);
+    doc.setFontSize(10);
+    doc.text(period, 14, 22);
 
-    // Prepare table data + total
-    let totalHours = 0;
+    let y = 30;
 
-    const tableData = Object.entries(selectedEmployee.days).map(
-      ([date, punches]) => {
+    summary.forEach((emp, idx) => {
+      if (y > 260) {
+        doc.addPage();
+        y = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.text(`${emp.name} (${emp.empId})`, 14, y);
+      y += 4;
+
+      const tableData = Object.entries(emp.days).map(([date, punches]) => {
         punches.sort((a, b) => a - b);
         let hours = "-";
         let status = "OK";
         if (punches.length % 2 !== 0) {
-          status = "Open Shift";
+          status = "Open Shift ⚠️";
         } else {
           hours = punches[punches.length - 1]
             .diff(punches[0], "hours")
             .hours.toFixed(2);
-
-          totalHours += parseFloat(hours);
         }
         return [
           date,
@@ -694,26 +663,35 @@ export default function ReportsPage() {
           hours,
           status,
         ];
-      }
-    );
+      });
 
-    // Add total row
-    tableData.push(["TOTAL", "", totalHours.toFixed(2), ""]);
+      // total row
+      const total = tableData
+        .filter((r) => !isNaN(parseFloat(r[2])))
+        .reduce((a, r) => a + parseFloat(r[2]), 0)
+        .toFixed(2);
 
-    // Table
-    autoTable(doc, {
-      startY: 35,
-      head: [["Date", "Punches", "Hours", "Status"]],
-      body: tableData,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [41, 128, 185] },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
+      tableData.push(["TOTAL", "", total, ""]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Date", "Punches", "Hours", "Status"]],
+        body: tableData,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 1.2 },
+        headStyles: { fillColor: [52, 152, 219] },
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { left: 14, right: 10 },
+      });
+
+      y = doc.lastAutoTable.finalY + 6;
     });
 
-    // Save
-    doc.save(
-      `Breakdown-${selectedEmployee.name}_${selectedEmployee.empId}.pdf`
-    );
+    const rangeLabel = `${dateRange.start || autoRange.start}_to_${
+      dateRange.end || autoRange.end
+    }`;
+
+    doc.save(`All_Breakdowns_${rangeLabel}.pdf`);
   };
 
   const exportDrilldownCSV = () => {
@@ -848,10 +826,13 @@ export default function ReportsPage() {
               week.total += hours;
 
               const nightStart = 22;
-const nightEnd = 6;
-if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
-  week.night += hours;
-}
+              const nightEnd = 6;
+              if (
+                current.time.hour >= nightStart ||
+                next.time.hour < nightEnd
+              ) {
+                week.night += hours;
+              }
               // Night Hours (after 18:00)
               if (current.time.hour >= 18 || next.time.hour >= 18)
                 week.night += hours;
@@ -878,28 +859,34 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
     console.log("✅ Weekly breakdown generated:", weeksByEmployee);
     setSummary(Object.values(weeksByEmployee)); // reuse summary state for display
   }
-
-  function exportWeeklyPDF(data) {
+  const exportWeeklyPDF = (data) => {
     if (!data.length) return alert("Generate weekly breakdown first.");
 
-    const doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text("Weekly Attendance Breakdown", 14, 20);
-    doc.setFontSize(10);
-    doc.text(
-      `Period: ${dateRange.start || autoRange.start} → ${
-        dateRange.end || autoRange.end
-      }`,
-      14,
-      28
-    );
+    const doc = new jsPDF("p", "mm", "a4");
 
-    let y = 35;
+    // Title + header
+    const title = "Weekly Attendance Breakdown (All Employees)";
+    const period = `Period: ${dateRange.start || autoRange.start} → ${
+      dateRange.end || autoRange.end
+    }`;
+
+    doc.setFontSize(14);
+    doc.text(title, 14, 15);
+    doc.setFontSize(10);
+    doc.text(period, 14, 22);
+
+    let y = 30;
+
     data.forEach((emp, idx) => {
-      if (idx > 0) doc.addPage();
-      doc.setFontSize(12);
+      // Add a new page when needed
+      if (y > 260) {
+        doc.addPage();
+        y = 20;
+      }
+
+      doc.setFontSize(11);
       doc.text(`${emp.name} (${emp.empId})`, 14, y);
-      y += 5;
+      y += 4;
 
       const tableData = Object.entries(emp.weeks).map(([week, d]) => [
         week,
@@ -911,24 +898,54 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
         d.holiday.toFixed(2),
       ]);
 
+      // ✅ Compute totals for the employee
+      const totals = Object.values(emp.weeks).reduce(
+        (acc, w) => {
+          acc.total += w.total;
+          acc.normal += w.normal;
+          acc.overtime += w.overtime;
+          acc.night += w.night;
+          acc.sunday += w.sunday;
+          acc.holiday += w.holiday;
+          return acc;
+        },
+        { total: 0, normal: 0, overtime: 0, night: 0, sunday: 0, holiday: 0 }
+      );
+
+      tableData.push([
+        "TOTAL",
+        totals.total.toFixed(2),
+        totals.normal.toFixed(2),
+        totals.overtime.toFixed(2),
+        totals.night.toFixed(2),
+        totals.sunday.toFixed(2),
+        totals.holiday.toFixed(2),
+      ]);
+
+      // Draw table
       autoTable(doc, {
         startY: y,
         head: [["Week", "Total", "Normal", "OT", "Night", "Sunday", "Holiday"]],
         body: tableData,
-        styles: { fontSize: 9 },
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 1 },
         headStyles: { fillColor: [52, 152, 219] },
         alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { left: 14, right: 10 },
       });
+
+      y = doc.lastAutoTable.finalY + 6;
     });
 
     const rangeLabel = `${dateRange.start || autoRange.start}_to_${
       dateRange.end || autoRange.end
     }`;
-    doc.save(`weekly_breakdown_${rangeLabel}.pdf`);
-  }
+
+    doc.save(`Weekly_Breakdown_${rangeLabel}.pdf`);
+  };
 
   return (
-    <div className="bg-white h-auto text-black p-6 rounded shadow space-y-6">
+    <div className="bg-white h-max text-black p-6 rounded shadow space-y-6">
       <h1 className="text-xl font-bold">Reports</h1>
 
       {/* Data Source */}
@@ -951,6 +968,35 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
           />
         </label>
       </div>
+        {/* Auto-detected period */}
+      {autoRange.start && autoRange.end && (
+        <p className="text-sm text-gray-600">
+          Period detected: <b>{autoRange.start}</b> → <b>{autoRange.end}</b>
+        </p>
+      )}
+       {/* Date Range Inputs */}
+      <div className="flex gap-4">
+        <input
+          type="date"
+          value={dateRange.start}
+          onChange={(e) =>
+            setDateRange({ ...dateRange, start: e.target.value })
+          }
+          className="p-2 border rounded"
+        />
+        <input
+          type="date"
+          value={dateRange.end}
+          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+          className="p-2 border rounded"
+        />
+        <button
+          onClick={handleGenerate}
+          className="px-4 py-2 bg-green-600 text-white rounded"
+        >
+          Generate Reports
+        </button>
+      </div>
 
       {/* Actions */}
       <div className="flex flex-wrap gap-4">
@@ -961,12 +1007,12 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
           Export Attendance CSV
         </button>
 
-        <button
+        {/* <button
           onClick={exportAdjustedCSV}
           className="px-4 py-2 bg-blue-600 text-white rounded"
         >
           Export Adjusted CSV
-        </button>
+        </button> */}
 
         <button
           onClick={exportPayrollCSV}
@@ -995,36 +1041,9 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
         </button>
       </div>
 
-      {/* Auto-detected period */}
-      {autoRange.start && autoRange.end && (
-        <p className="text-sm text-gray-600">
-          Period detected: <b>{autoRange.start}</b> → <b>{autoRange.end}</b>
-        </p>
-      )}
+    
 
-      {/* Date Range Inputs */}
-      <div className="flex gap-4">
-        <input
-          type="date"
-          value={dateRange.start}
-          onChange={(e) =>
-            setDateRange({ ...dateRange, start: e.target.value })
-          }
-          className="p-2 border rounded"
-        />
-        <input
-          type="date"
-          value={dateRange.end}
-          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-          className="p-2 border rounded"
-        />
-        <button
-          onClick={handleGenerate}
-          className="px-4 py-2 bg-green-600 text-white rounded"
-        >
-          Generate Report
-        </button>
-      </div>
+     
       {summary.length === 0 && (
         <p className="text-sm text-gray-500">
           No summary yet. Upload a CSV and click Generate.
@@ -1032,7 +1051,7 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
       )}
 
       {/* Summary Table */}
-      {summary.length > 0 && summary[0]?.weeks ==null && (
+      {summary.length > 0 && summary[0]?.weeks == null && (
         <>
           <p className="text-sm mt-2">
             Showing report for: <b>{dateRange.start || autoRange.start}</b> →{" "}
@@ -1050,9 +1069,10 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
                 <th className="p-2 border">Sunday</th>
                 <th className="p-2 border">Night</th>
                 <th className="p-2 border">T/L Allow</th>
-                <th className="p-2 border">Attend Allow</th>
+                {/* <th className="p-2 border">Attend Allow</th> */}
+                <th className="p-2 border">Total Hrs</th>
                 <th className="p-2 border">Open Shifts</th>
-                <th className="p-2 border">Actions</th>
+                {/* <th className="p-2 border">Actions</th> */}
               </tr>
             </thead>
             <tbody>
@@ -1066,16 +1086,16 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
                   <td className="p-2 border">{row.sunday}</td>
                   <td className="p-2 border">{row.night}</td>
                   <td className="p-2 border">{row.transport}</td>
-                  <td className="p-2 border">{row.attendance}</td>
+                  <td className="p-2 border">{row.totalHours}</td>
                   <td className="p-2 border text-red-600">{row.openShifts}</td>
-                  <td className="p-2 border text-blue-600">
+                  {/* <td className="p-2 border text-blue-600">
                     <button
                       onClick={() => setSelectedEmployee(row)}
                       className="underline"
                     >
                       Breakdown
                     </button>
-                  </td>
+                  </td> */}
                 </tr>
               ))}
             </tbody>
@@ -1087,98 +1107,179 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
       {summary.length > 0 && summary[0]?.weeks && (
         <div className="mt-8">
           <h2 className="text-lg font-bold mb-4">Weekly Breakdown</h2>
-          {summary.map((emp, i) => (
-            <div
-              key={i}
-              className="mb-8 border rounded-lg shadow-sm p-4 bg-gray-50"
-            >
-              <h3 className="font-semibold text-gray-800 mb-2">
-                {emp.name} ({emp.empId})
-              </h3>
-              <table className="w-full text-sm border-collapse">
-                <thead className="bg-blue-100">
-                  <tr>
-                    <th className="border p-2">Week</th>
-                    <th className="border p-2">Total</th>
-                    <th className="border p-2">Normal</th>
-                    <th className="border p-2">Overtime</th>
-                    <th className="border p-2">Night</th>
-                    <th className="border p-2">Sunday</th>
-                    <th className="border p-2">Holiday</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(emp.weeks).map(([weekNum, week]) => (
-                    <tr key={weekNum}>
-                      <td className="border p-2 text-center">{weekNum}</td>
+          {summary.map((emp, i) => {
+            // 🧮 Compute totals for each employee
+            const totals = Object.values(emp.weeks).reduce(
+              (acc, w) => {
+                acc.total += w.total;
+                acc.normal += w.normal;
+                acc.overtime += w.overtime;
+                acc.night += w.night;
+                acc.sunday += w.sunday;
+                acc.holiday += w.holiday;
+                return acc;
+              },
+              {
+                total: 0,
+                normal: 0,
+                overtime: 0,
+                night: 0,
+                sunday: 0,
+                holiday: 0,
+              }
+            );
+
+            return (
+              <div
+                key={i}
+                className="mb-8 border rounded-lg shadow-sm p-4 bg-gray-50"
+              >
+                <h3 className="font-semibold text-gray-800 mb-2">
+                  {emp.name} ({emp.empId})
+                </h3>
+                <table className="w-full text-sm border-collapse">
+                  <thead className="bg-blue-100">
+                    <tr>
+                      <th className="border p-2">Week</th>
+                      <th className="border p-2">Total</th>
+                      <th className="border p-2">Normal</th>
+                      <th className="border p-2">Overtime</th>
+                      <th className="border p-2">Night</th>
+                      <th className="border p-2">Sunday</th>
+                      <th className="border p-2">Holiday</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(emp.weeks).map(([weekNum, week]) => (
+                      <tr key={weekNum}>
+                        <td className="border p-2 text-center font-medium bg-white">
+                          {weekNum}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.total.toFixed(2)}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.normal.toFixed(2)}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.overtime.toFixed(2)}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.night.toFixed(2)}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.sunday.toFixed(2)}
+                        </td>
+                        <td className="border p-2 text-center">
+                          {week.holiday.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                    {/* ✅ Totals Row */}
+                    <tr className="bg-blue-50 font-semibold">
+                      <td className="border p-2 text-center">TOTAL</td>
                       <td className="border p-2 text-center">
-                        {week.total.toFixed(2)}
+                        {totals.total.toFixed(2)}
                       </td>
                       <td className="border p-2 text-center">
-                        {week.normal.toFixed(2)}
+                        {totals.normal.toFixed(2)}
                       </td>
                       <td className="border p-2 text-center">
-                        {week.overtime.toFixed(2)}
+                        {totals.overtime.toFixed(2)}
                       </td>
                       <td className="border p-2 text-center">
-                        {week.night.toFixed(2)}
+                        {totals.night.toFixed(2)}
                       </td>
                       <td className="border p-2 text-center">
-                        {week.sunday.toFixed(2)}
+                        {totals.sunday.toFixed(2)}
                       </td>
                       <td className="border p-2 text-center">
-                        {week.holiday.toFixed(2)}
+                        {totals.holiday.toFixed(2)}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* Drilldown Full-Screen */}
       {selectedEmployee && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded shadow max-w-2xl w-full">
-            <h2 className="text-xl font-bold mb-2">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-3xl w-full h-[80vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">
               Daily Breakdown - {selectedEmployee.name} (
               {selectedEmployee.empId})
             </h2>
 
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-100">
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-gray-100 sticky top-0">
+                <tr>
                   <th className="p-2 border">Date</th>
                   <th className="p-2 border">Punches</th>
-                  <th className="p-2 border">Hours</th>
+                  {/* <th className="p-2 border">Hours</th> */}
                   <th className="p-2 border">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(selectedEmployee.days).map(
                   ([date, punches], i) => {
-                    punches.sort((a, b) => a - b);
+                    punches.sort((a, b) => a.time - b.time);
                     let hours = "-";
                     let status = "OK";
-                    if (punches.length % 2 !== 0) {
+
+                    if (punches.length < 2) {
+                      status = "Incomplete";
+                    } else if (punches.length % 2 !== 0) {
                       status = "Open Shift ⚠️";
                     } else {
-                      hours = punches[punches.length - 1]
-                        .diff(punches[0], "hours")
-                        .hours.toFixed(2);
+                      // const firstPunch = punches[0];
+                      // const lastPunch = punches[punches.length - 1];
+
+                      // // Ensure both are Luxon DateTime objects
+                      // const first =
+                      //   firstPunch.time && firstPunch.time.diff
+                      //     ? firstPunch.time
+                      //     : DateTime.fromISO(firstPunch.time || firstPunch);
+
+                      // const last =
+                      //   lastPunch.time && lastPunch.time.diff
+                      //     ? lastPunch.time
+                      //     : DateTime.fromISO(lastPunch.time || lastPunch);
+
+                      // if (first.isValid && last.isValid) {
+                      //   const diffHours = last.diff(first, "hours").hours;
+                      //   hours = diffHours.toFixed(2);
+                      // } else {
+                      //   console.warn(
+                      //     "Invalid punch time:",
+                      //     firstPunch,
+                      //     lastPunch
+                      //   );
+                      //   hours = "-";
+                      // }
                     }
+
                     return (
                       <tr key={i}>
-                        <td className="p-2 border">{date}</td>
-                        <td className="p-2 border">{punches.map(p => p.toFormat("HH:mm")).join(", ")}</td>
-
-                        {/* <td className="p-2 border">
-                          {time}
+                        <td className="border p-2">{date}</td>
+                        {/* <td className="border p-2">
+                          {punches
+                            .map((p) => {
+                              const dt =
+                                p.time && p.time.toFormat
+                                  ? p.time
+                                  : DateTime.fromISO(p.time || p);
+                              return dt.isValid
+                                ? dt.toFormat("HH:mm")
+                                : "Invalid";
+                            })
+                            .join(", ")}
                         </td> */}
-                        <td className="p-2 border">{hours}</td>
-                        {/* <td className="p-2 border">{status}</td> */}
+                        <td className="border p-2 text-center">{hours}</td>
+                        <td className="border p-2 text-center">{status}</td>
                       </tr>
                     );
                   }
@@ -1187,12 +1288,12 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
             </table>
 
             {/* ✅ Total Hours */}
-            <p className="mt-3 text-sm font-semibold text-right">
+            {/* <p className="mt-3 text-sm font-semibold text-right">
               Total Hours:{" "}
               {Object.entries(selectedEmployee.days)
                 .reduce((sum, [_, punches]) => {
-                  punches.sort((a, b) => a - b);
-                  if (punches.length % 2 === 0) {
+                  punches.sort((a, b) => a.time - b.time);
+                  if (punches.length >= 2 && punches.length % 2 === 0) {
                     const hrs = punches[punches.length - 1]
                       .diff(punches[0], "hours")
                       .hours.toFixed(2);
@@ -1201,10 +1302,10 @@ if (current.time.hour >= nightStart || next.time.hour < nightEnd) {
                   return sum;
                 }, 0)
                 .toFixed(2)}
-            </p>
+            </p> */}
 
             {/* Actions */}
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 flex gap-3 justify-end">
               <button
                 onClick={exportDrilldownPDF}
                 className="px-4 py-2 bg-purple-600 text-white rounded"
